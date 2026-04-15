@@ -5,3 +5,4 @@ seaborn
 requests
 folium
 streamlit_folium
+streamlit_lottie
