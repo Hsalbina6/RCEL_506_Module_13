@@ -18,7 +18,6 @@ def get_ecobici_data():
         df1 = pd.DataFrame(requests.get(info_url).json()['data']['stations'])[['station_id', 'lat', 'lon', 'capacity', 'name']]
         df2 = pd.DataFrame(requests.get(status_url).json()['data']['stations'])[['station_id', 'num_bikes_available', 'num_docks_available']]
         
-        # Ensure ID is integer for proper sorting
         df1['station_id'] = df1['station_id'].astype(int)
         df2['station_id'] = df2['station_id'].astype(int)
         
@@ -51,25 +50,27 @@ with col2:
 
 st.divider()
 
-# --- ROW 2: SIDEBAR & MAP ---
+# --- ROW 2: SIDEBAR & CONFIG ---
 df = get_ecobici_data()
 
 if not df.empty:
-    # --- FIXED SIDEBAR SELECTION ---
+    st.sidebar.header("Map Settings")
+    
+    # 1. Day/Night Toggle
+    map_style = st.sidebar.radio("Map Mode:", ["Day (Standard)", "Night (Dark Mode)"])
+    tile_provider = "OpenStreetMap" if map_style == "Day (Standard)" else "CartoDB dark_matter"
+
+    # 2. Station Search
+    st.sidebar.divider()
     st.sidebar.header("Station Search")
-    
-    # Create a formatted label: "ID - Name"
-    df = df.sort_values('station_id') # Sort numerically
+    df = df.sort_values('station_id')
     df['display_name'] = df['station_id'].astype(str) + " - " + df['name']
-    
-    # User selects from the pretty name, but we get the ID back
     selected_display = st.sidebar.selectbox("Select Station:", df['display_name'])
     selected_id = int(selected_display.split(" - ")[0])
     
-    # Map Initialization
-    m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=13)
+    # --- MAP INITIALIZATION ---
+    m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=13, tiles=tile_provider)
     
-    # Logic for Dynamic Marker Colors
     for i, row in df.iterrows():
         bikes = row['num_bikes_available']
         color = "green" if bikes > 5 else "orange" if bikes > 0 else "red"
@@ -80,7 +81,6 @@ if not df.empty:
             icon=folium.Icon(color=color, icon="bicycle", prefix="fa")
         ).add_to(m)
         
-    # Highlight Selected
     target = df[df['station_id'] == selected_id].iloc[0]
     folium.Marker(
         [target['lat'], target['lon']],
@@ -91,9 +91,25 @@ if not df.empty:
 
     st_folium(m, width=1000, height=500)
     
-    # Quick Stats Row
+    # --- STATISTICS ---
     st.write(f"### Current Status: {target['name']}")
     c1, c2, c3 = st.columns(3)
     c1.metric("Bikes Available", target['num_bikes_available'])
     c2.metric("Empty Docks", target['num_docks_available'])
     c3.metric("Total Capacity", target['capacity'])
+
+    st.divider()
+
+    # --- LEADERBOARDS ---
+    st.write("### 🏆 CDMX Network Leaderboards")
+    lead1, lead2 = st.columns(2)
+
+    with lead1:
+        st.subheader("🔥 Top 5 Fullest Stations")
+        top_5 = df.nlargest(5, 'num_bikes_available')[['station_id', 'name', 'num_bikes_available']]
+        st.dataframe(top_5, hide_index=True, use_container_width=True)
+
+    with lead2:
+        st.subheader("👻 Top 5 'Ghost' Stations")
+        ghost_5 = df.nsmallest(5, 'num_bikes_available')[['station_id', 'name', 'num_bikes_available']]
+        st.dataframe(ghost_5, hide_index=True, use_container_width=True)
