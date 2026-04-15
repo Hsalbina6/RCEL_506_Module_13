@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 from streamlit_lottie import st_lottie
 
 # --- 1. DATA FETCHING ---
-@st.cache_data(ttl=60) # Refresh data every minute
+@st.cache_data(ttl=60)
 def get_ecobici_data():
     try:
         url = 'https://gbfs.mex.lyftbikes.com/gbfs/gbfs.json'
@@ -17,6 +17,10 @@ def get_ecobici_data():
         
         df1 = pd.DataFrame(requests.get(info_url).json()['data']['stations'])[['station_id', 'lat', 'lon', 'capacity', 'name']]
         df2 = pd.DataFrame(requests.get(status_url).json()['data']['stations'])[['station_id', 'num_bikes_available', 'num_docks_available']]
+        
+        # Ensure ID is integer for proper sorting
+        df1['station_id'] = df1['station_id'].astype(int)
+        df2['station_id'] = df2['station_id'].astype(int)
         
         return pd.merge(df1, df2, on='station_id')
     except Exception as e:
@@ -51,11 +55,16 @@ st.divider()
 df = get_ecobici_data()
 
 if not df.empty:
-    # Sidebar Selection
+    # --- FIXED SIDEBAR SELECTION ---
     st.sidebar.header("Station Search")
-    # Using the list as shown in your image
-    station_list = sorted(df['station_id'].unique())
-    selected_id = st.sidebar.selectbox("Select Station ID:", station_list)
+    
+    # Create a formatted label: "ID - Name"
+    df = df.sort_values('station_id') # Sort numerically
+    df['display_name'] = df['station_id'].astype(str) + " - " + df['name']
+    
+    # User selects from the pretty name, but we get the ID back
+    selected_display = st.sidebar.selectbox("Select Station:", df['display_name'])
+    selected_id = int(selected_display.split(" - ")[0])
     
     # Map Initialization
     m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=13)
@@ -63,34 +72,27 @@ if not df.empty:
     # Logic for Dynamic Marker Colors
     for i, row in df.iterrows():
         bikes = row['num_bikes_available']
-        
-        # Color Logic
-        if bikes > 5:
-            marker_color = "green"
-        elif bikes > 0:
-            marker_color = "orange"
-        else:
-            marker_color = "red"
+        color = "green" if bikes > 5 else "orange" if bikes > 0 else "red"
             
         folium.Marker(
             [row['lat'], row['lon']], 
-            tooltip=f"ID: {row['station_id']} | Bikes: {bikes}",
-            icon=folium.Icon(color=marker_color, icon="bicycle", prefix="fa")
+            tooltip=f"ID: {row['station_id']} | {row['name']}",
+            icon=folium.Icon(color=color, icon="bicycle", prefix="fa")
         ).add_to(m)
         
-    # Highlight the specific selected station with a Blue Star
+    # Highlight Selected
     target = df[df['station_id'] == selected_id].iloc[0]
     folium.Marker(
         [target['lat'], target['lon']],
-        popup=f"<b>Station {selected_id}</b><br>Name: {target['name']}<br>Bikes: {target['num_bikes_available']}<br>Docks: {target['num_docks_available']}",
+        popup=f"ID {selected_id}: {target['num_bikes_available']} bikes",
         icon=folium.Icon(color="blue", icon="star", prefix="fa"),
-        z_index_offset=1000 # Keep selected station on top
+        z_index_offset=1000 
     ).add_to(m)
 
     st_folium(m, width=1000, height=500)
     
     # Quick Stats Row
-    st.write("### Station Overview")
+    st.write(f"### Current Status: {target['name']}")
     c1, c2, c3 = st.columns(3)
     c1.metric("Bikes Available", target['num_bikes_available'])
     c2.metric("Empty Docks", target['num_docks_available'])
