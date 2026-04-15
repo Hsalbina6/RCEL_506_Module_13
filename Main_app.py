@@ -34,7 +34,7 @@ df = get_ecobici_data()
 
 # --- ROW 1: Header ---
 st.title("Ecobici CDMX Dashboard")
-st.caption("Developed by [Your Name]") # Replace with your actual name
+st.caption("Developed by Hassan ") # Replace with your actual name
 
 st.divider()
 
